@@ -10,13 +10,26 @@ import (
 	"time"
 	
 	_ "github.com/marcboeker/go-duckdb"
+	"github.com/spf13/cobra"
+)
+
+var (
+	claudeDir string
+	hooksDir  string
 )
 
 func runCCStats() {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Printf("Error getting home directory: %v\n", err)
-		return
+	if claudeDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Printf("Error getting home directory: %v\n", err)
+			return
+		}
+		claudeDir = filepath.Join(homeDir, ".claude")
+	}
+
+	if hooksDir == "" {
+		hooksDir = filepath.Join(claudeDir, "hooks")
 	}
 
 	db, err := sql.Open("duckdb", "")
@@ -27,7 +40,7 @@ func runCCStats() {
 	defer db.Close()
 
 	// Create table from all JSONL files
-	globPattern := filepath.Join(homeDir, ".claude", "projects", "**", "*.jsonl")
+	globPattern := filepath.Join(claudeDir, "projects", "**", "*.jsonl")
 	createTableQuery := fmt.Sprintf(`
 		CREATE TABLE all_data AS
 		SELECT * FROM read_json('%s',
@@ -185,12 +198,11 @@ func runCCStats() {
 	}
 
 	// Analyze hooks data if available
-	analyzeHooksData(db, homeDir)
+	analyzeHooksData(db, hooksDir)
 }
 
-func analyzeHooksData(db *sql.DB, homeDir string) {
+func analyzeHooksData(db *sql.DB, hooksDir string) {
 	// Check if hooks directory exists
-	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
 	if _, err := os.Stat(hooksDir); os.IsNotExist(err) {
 		return // No hooks data to analyze
 	}
@@ -222,41 +234,18 @@ func analyzeHooksData(db *sql.DB, homeDir string) {
 	fmt.Printf("\n=== Hooks Statistics ===\n")
 	fmt.Printf("Total hook events: %d\n", totalHooks)
 
-	// Get hook events by type
-	hooksByTypeQuery := `
-		SELECT 
-			event_type,
-			COUNT(*) as count
-		FROM hooks_data
-		GROUP BY event_type
-		ORDER BY count DESC`
-	
-	rows, err := db.Query(hooksByTypeQuery)
-	if err == nil {
-		defer rows.Close()
-		fmt.Printf("\nHook events by type:\n")
-		for rows.Next() {
-			var eventType string
-			var count int64
-			if err := rows.Scan(&eventType, &count); err == nil {
-				fmt.Printf("  %-20s: %d\n", eventType, count)
-			}
-		}
-	}
-
-	// Get tool usage from hooks (if PreToolUse/PostToolUse events exist)
+	// Get tool usage from hooks
 	toolUsageQuery := `
 		SELECT 
 			json_extract_string(hook_data::JSON, '$.tool.tool') as tool_name,
 			COUNT(*) as usage_count
 		FROM hooks_data
-		WHERE event_type IN ('PreToolUse', 'PostToolUse')
-		AND json_extract_string(hook_data::JSON, '$.tool.tool') IS NOT NULL
+		WHERE json_extract_string(hook_data::JSON, '$.tool.tool') IS NOT NULL
 		GROUP BY tool_name
 		ORDER BY usage_count DESC
 		LIMIT 10`
 	
-	rows, err = db.Query(toolUsageQuery)
+	rows, err := db.Query(toolUsageQuery)
 	if err == nil {
 		defer rows.Close()
 		fmt.Printf("\nTop 10 tool usage from hooks:\n")
@@ -277,7 +266,6 @@ func analyzeHooksData(db *sql.DB, homeDir string) {
 
 type HookEvent struct {
 	Timestamp   time.Time              `json:"timestamp"`
-	EventType   string                 `json:"event_type"`
 	HookData    map[string]interface{} `json:"hook_data"`
 	ExitCode    int                    `json:"exit_code,omitempty"`
 	StdoutData  string                 `json:"stdout_data,omitempty"`
@@ -285,6 +273,7 @@ type HookEvent struct {
 }
 
 func handleHook() error {
+
 	// Read JSON input from stdin
 	inputData, err := io.ReadAll(os.Stdin)
 	if err != nil {
@@ -297,38 +286,22 @@ func handleHook() error {
 		return fmt.Errorf("error parsing JSON: %w", err)
 	}
 
-	// Determine event type from environment or hook data
-	eventType := os.Getenv("CLAUDE_HOOK_EVENT")
-	if eventType == "" {
-		// Try to infer from hook data structure
-		if _, ok := hookData["tool"]; ok {
-			if _, ok := hookData["result"]; ok {
-				eventType = "PostToolUse"
-			} else {
-				eventType = "PreToolUse"
-			}
-		} else if _, ok := hookData["notification"]; ok {
-			eventType = "Notification"
-		} else {
-			eventType = "Unknown"
-		}
-	}
-
 	// Create hook event
 	event := HookEvent{
 		Timestamp: time.Now(),
-		EventType: eventType,
 		HookData:  hookData,
 		ExitCode:  0,
 	}
 
 	// Get hooks log file path
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("error getting home directory: %w", err)
+	if hooksDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("error getting home directory: %w", err)
+		}
+		hooksDir = filepath.Join(homeDir, ".claude", "hooks")
 	}
 
-	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		return fmt.Errorf("error creating hooks directory: %w", err)
 	}
@@ -355,13 +328,38 @@ func handleHook() error {
 	return nil
 }
 
-func main() {
-	if len(os.Args) > 1 && os.Args[1] == "hook" {
+var rootCmd = &cobra.Command{
+	Use:   "ccstats",
+	Short: "Claude Code statistics and hooks analyzer",
+	Long:  `ccstats analyzes Claude Code usage statistics and provides hooks integration for capturing Claude Code events.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		runCCStats()
+	},
+}
+
+var hookCmd = &cobra.Command{
+	Use:   "hook",
+	Short: "Run as hook handler for Claude Code",
+	Long:  `Hook command processes Claude Code hook events and logs them for analysis.`,
+	Run: func(cmd *cobra.Command, args []string) {
 		if err := handleHook(); err != nil {
 			fmt.Fprintf(os.Stderr, "Hook handler error: %v\n", err)
 			os.Exit(1)
 		}
-	} else {
-		runCCStats()
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(hookCmd)
+	
+	// Global flags
+	rootCmd.PersistentFlags().StringVar(&claudeDir, "claude-dir", "", "Path to Claude directory (default: ~/.claude)")
+	rootCmd.PersistentFlags().StringVar(&hooksDir, "hooks-dir", "", "Path to hooks directory (default: ~/.claude/hooks)")
+}
+
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 }

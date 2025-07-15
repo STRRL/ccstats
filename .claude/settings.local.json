@@ -5,7 +5,10 @@
       "WebFetch(domain:duckdb.org)",
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(rm:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(go mod:*)",
+      "Bash(./ccstats)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

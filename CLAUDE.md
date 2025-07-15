@@ -15,18 +15,29 @@ go build -o ccstats main.go
 
 ### Run Statistics Analysis
 ```bash
-./ccstats
+./ccstats                    # Default statistics command
+./ccstats --claude-dir /path # Custom Claude directory
+./ccstats --hooks-dir /path  # Custom hooks directory
 ```
 
 ### Run as Hook Handler
 ```bash
-./ccstats hook
+./ccstats hook               # Hook handler mode
+./ccstats hook --help        # Hook command help
+```
+
+### CLI Help
+```bash
+./ccstats --help             # Show all commands and flags
+./ccstats completion bash    # Generate bash completion
+./ccstats completion zsh     # Generate zsh completion
 ```
 
 ### Development Commands
 ```bash
-go mod tidy          # Clean up dependencies
-go run main.go       # Run without building binary
+go mod tidy                  # Clean up dependencies
+go run main.go               # Run without building binary
+go run main.go hook          # Run hook handler directly
 ```
 
 ## Architecture
@@ -42,6 +53,7 @@ go run main.go       # Run without building binary
 
 ### Key Dependencies
 - `github.com/marcboeker/go-duckdb`: Analytical SQL queries on Claude logs
+- `github.com/spf13/cobra`: CLI framework for commands and flags
 - Standard library for JSON processing and file operations
 
 ## Hook Integration Setup
