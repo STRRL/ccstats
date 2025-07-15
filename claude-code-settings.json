@@ -1,0 +1,71 @@
+{
+  "$schema": "https://cdn.jsdelivr.net/gh/anthropics/claude-code/settings.schema.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/strrl/playground/GitHub/ccstats/ccstats hook"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/strrl/playground/GitHub/ccstats/ccstats hook"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/strrl/playground/GitHub/ccstats/ccstats hook"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/strrl/playground/GitHub/ccstats/ccstats hook"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/strrl/playground/GitHub/ccstats/ccstats hook"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/strrl/playground/GitHub/ccstats/ccstats hook"
+          }
+        ]
+      }
+    ]
+  }
+}

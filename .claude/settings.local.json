@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go get:*)",
+      "WebFetch(domain:duckdb.org)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(rm:*)",
+      "Bash(go build:*)"
+    ],
+    "deny": []
+  }
+}
