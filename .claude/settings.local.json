@@ -9,7 +9,9 @@
       "Bash(go mod:*)",
       "Bash(./ccstats)",
       "Bash(ls:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(corepack use:*)",
+      "Bash(corepack enable:*)"
     ],
     "deny": []
   }
