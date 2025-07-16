@@ -22,7 +22,11 @@ export async function GET(request: NextRequest) {
     // Use glob pattern to match all .jsonl files recursively
     const logsPattern = join(claudeDir, '**', '*.jsonl').replace(/\\/g, '/')
     
-    // Query to get recent 100 events using DuckDB
+    // Get current time and 1 hour ago for filtering
+    const now = new Date()
+    const oneHourAgo = new Date(now.getTime() - (60 * 60 * 1000))
+    
+    // Query to get events from the last 1 hour using DuckDB
     const query = `
       SELECT 
         json_extract(line, '$.timestamp') as timestamp,
@@ -35,9 +39,12 @@ export async function GET(request: NextRequest) {
         json_extract(line, '$.project_name') as project_name,
         line as raw_data
       FROM read_text('${logsPattern}', format='auto') 
-      WHERE line != '' AND json_valid(line) AND json_extract(line, '$.timestamp') IS NOT NULL
+      WHERE line != '' 
+        AND json_valid(line) 
+        AND json_extract(line, '$.timestamp') IS NOT NULL
+        AND strptime(json_extract(line, '$.timestamp'), '%Y-%m-%dT%H:%M:%S.%fZ') >= strptime('${oneHourAgo.toISOString()}', '%Y-%m-%dT%H:%M:%S.%fZ')
       ORDER BY timestamp DESC 
-      LIMIT 100
+      LIMIT 200
     `
     
     try {
@@ -68,8 +75,15 @@ function generateMockEvents() {
   const models = ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-opus-20240229']
   const projects = ['ccstats', 'webui-project', 'demo-app']
   
-  for (let i = 0; i < 20; i++) {
-    const timestamp = new Date(Date.now() - (i * 1000 * 60 * 10)) // Every 10 minutes
+  const now = Date.now()
+  const oneHourAgo = now - (60 * 60 * 1000)
+  
+  // Generate events within the last hour with varying intervals
+  for (let i = 0; i < 15; i++) {
+    // Random time within the last hour
+    const randomOffset = Math.random() * (60 * 60 * 1000) // Random within 1 hour
+    const timestamp = new Date(oneHourAgo + randomOffset)
+    
     mockEvents.push({
       timestamp: timestamp.toISOString(),
       event_type: eventTypes[Math.floor(Math.random() * eventTypes.length)],
@@ -87,5 +101,6 @@ function generateMockEvents() {
     })
   }
   
-  return mockEvents
+  // Sort by timestamp descending
+  return mockEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 }
