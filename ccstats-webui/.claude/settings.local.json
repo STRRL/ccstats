@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:duckdb.org)",
+      "Bash(tsx:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm test:*)",
+      "Bash(jq:*)"
+    ],
+    "deny": []
+  }
+}

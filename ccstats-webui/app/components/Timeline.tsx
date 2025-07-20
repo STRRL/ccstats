@@ -11,7 +11,256 @@ interface Event {
   cache_creation_tokens: number
   cache_read_tokens: number
   project_name: string
+  message_content?: string
+  content?: string
+  tool_name?: string
+  tool_input?: string
+  diffs?: string
+  files_edited?: string
   raw_data: string
+}
+
+const renderEventSpecificDetails = (event: Event) => {
+  let eventData: any = {}
+  
+  console.log('Rendering event details for:', event.event_type)
+  console.log('Event data:', event)
+  console.log('Raw data:', event.raw_data)
+  
+  try {
+    eventData = JSON.parse(event.raw_data)
+    console.log('Parsed event data:', eventData)
+  } catch (e) {
+    console.log('Failed to parse raw_data as JSON:', e)
+    eventData = {}
+  }
+
+  return (
+    <div className="mt-4 bg-gray-50 rounded-lg p-4">
+      <h4 className="text-lg font-semibold mb-3 text-gray-900">Event Details</h4>
+      
+      {/* Tool Use Details */}
+      {event.event_type === 'tool_use' && renderToolUseDetails(eventData)}
+      
+      {/* Chat Message Details */}
+      {event.event_type === 'chat_message' && renderChatMessageDetails(eventData)}
+      
+      {/* Completion Details */}
+      {event.event_type === 'completion' && renderCompletionDetails(event, eventData)}
+      
+      {/* File Edit Details */}
+      {(eventData.tool_name === 'edit' || eventData.tool_name === 'write') && renderFileEditDetails(eventData)}
+      
+      {/* Error Details */}
+      {event.event_type === 'error' && renderErrorDetails(eventData)}
+      
+      {/* Raw Data Expandable */}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-800">
+          Raw Event Data
+        </summary>
+        <pre className="mt-2 text-xs bg-gray-800 text-green-400 p-3 rounded overflow-auto max-h-40">
+          {JSON.stringify(eventData, null, 2)}
+        </pre>
+      </details>
+    </div>
+  )
+}
+
+const renderToolUseDetails = (eventData: any) => {
+  const toolName = eventData.tool_name || eventData.name
+  const toolInput = eventData.tool_input || eventData.input
+  
+  return (
+    <div className="mb-4">
+      <h5 className="font-medium text-gray-800 mb-2">🔧 Tool Usage</h5>
+      <div className="bg-blue-50 p-3 rounded">
+        <div className="text-sm">
+          <span className="font-medium">Tool:</span> {toolName || 'Unknown'}
+        </div>
+        {toolInput && (
+          <div className="mt-2">
+            <span className="font-medium text-sm">Input:</span>
+            <pre className="text-xs bg-white p-2 rounded mt-1 overflow-auto max-h-32">
+              {typeof toolInput === 'string' ? toolInput : JSON.stringify(toolInput, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const renderChatMessageDetails = (eventData: any) => {
+  const content = eventData.content || eventData.message
+  
+  return (
+    <div className="mb-4">
+      <h5 className="font-medium text-gray-800 mb-2">💬 Chat Message</h5>
+      <div className="bg-blue-50 p-3 rounded">
+        {content && (
+          <div className="text-sm">
+            <span className="font-medium">Content:</span>
+            <div className="mt-1 p-2 bg-white rounded text-gray-700 max-h-32 overflow-auto">
+              {typeof content === 'string' ? content : JSON.stringify(content, null, 2)}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const renderFileEditDetails = (eventData: any) => {
+  const toolInput = eventData.tool_input || eventData.input
+  const filePath = toolInput?.file_path
+  const oldString = toolInput?.old_string
+  const newString = toolInput?.new_string
+  const content = toolInput?.content
+  
+  return (
+    <div className="mb-4">
+      <h5 className="font-medium text-gray-800 mb-2">📝 File Edit</h5>
+      <div className="bg-yellow-50 p-3 rounded">
+        {filePath && (
+          <div className="text-sm mb-2">
+            <span className="font-medium">File:</span> 
+            <code className="bg-gray-200 px-1 rounded text-xs ml-1">{filePath}</code>
+          </div>
+        )}
+        
+        {oldString && newString && (
+          <div className="mt-3">
+            <span className="font-medium text-sm">Changes:</span>
+            <div className="mt-1 text-xs">
+              <div className="bg-red-50 border-l-4 border-red-400 p-2 mb-1">
+                <div className="font-medium text-red-800">- Removed:</div>
+                <pre className="text-red-700 whitespace-pre-wrap">{oldString}</pre>
+              </div>
+              <div className="bg-green-50 border-l-4 border-green-400 p-2">
+                <div className="font-medium text-green-800">+ Added:</div>
+                <pre className="text-green-700 whitespace-pre-wrap">{newString}</pre>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {content && !oldString && (
+          <div className="mt-2">
+            <span className="font-medium text-sm">Content:</span>
+            <pre className="text-xs bg-white p-2 rounded mt-1 overflow-auto max-h-32">
+              {content}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const renderCompletionDetails = (event: Event, eventData: any) => {
+  const message = event.message_content || eventData.message
+  const diffs = event.diffs || eventData.diffs
+  const filesEdited = event.files_edited || eventData.files_edited
+  
+  return (
+    <div className="mb-4">
+      <h5 className="font-medium text-gray-800 mb-2">✅ Completion</h5>
+      <div className="bg-green-50 p-3 rounded">
+        
+        {/* Message content */}
+        {message && (
+          <div className="mb-3">
+            <span className="font-medium text-sm">Message:</span>
+            <div className="mt-1 p-2 bg-white rounded text-gray-700 max-h-32 overflow-auto text-sm">
+              {typeof message === 'string' ? message : JSON.stringify(message, null, 2)}
+            </div>
+          </div>
+        )}
+        
+        {/* Files edited */}
+        {filesEdited && (
+          <div className="mb-3">
+            <span className="font-medium text-sm">Files Edited:</span>
+            <div className="mt-1">
+              {Array.isArray(filesEdited) ? (
+                <ul className="text-sm">
+                  {filesEdited.map((file: string, index: number) => (
+                    <li key={index} className="text-blue-600">
+                      <code className="bg-gray-200 px-1 rounded text-xs">{file}</code>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <code className="bg-gray-200 px-1 rounded text-xs">{filesEdited}</code>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* Diffs */}
+        {diffs && (
+          <div className="mt-3">
+            <span className="font-medium text-sm">Code Changes:</span>
+            <div className="mt-1 text-xs">
+              {Array.isArray(diffs) ? (
+                diffs.map((diff: any, index: number) => (
+                  <div key={index} className="mb-2 border rounded">
+                    {diff.file && (
+                      <div className="bg-gray-100 px-2 py-1 text-xs font-medium border-b">
+                        📁 {diff.file}
+                      </div>
+                    )}
+                    <div className="p-2">
+                      {diff.added && (
+                        <div className="bg-green-50 border-l-4 border-green-400 p-2 mb-1">
+                          <div className="font-medium text-green-800 text-xs">+ Added:</div>
+                          <pre className="text-green-700 whitespace-pre-wrap text-xs">{diff.added}</pre>
+                        </div>
+                      )}
+                      {diff.removed && (
+                        <div className="bg-red-50 border-l-4 border-red-400 p-2">
+                          <div className="font-medium text-red-800 text-xs">- Removed:</div>
+                          <pre className="text-red-700 whitespace-pre-wrap text-xs">{diff.removed}</pre>
+                        </div>
+                      )}
+                      {diff.content && !diff.added && !diff.removed && (
+                        <pre className="text-gray-700 whitespace-pre-wrap text-xs bg-gray-50 p-2 rounded">{diff.content}</pre>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : typeof diffs === 'string' ? (
+                <pre className="text-gray-700 whitespace-pre-wrap text-xs bg-white p-2 rounded border max-h-40 overflow-auto">{diffs}</pre>
+              ) : (
+                <pre className="text-gray-700 whitespace-pre-wrap text-xs bg-white p-2 rounded border max-h-40 overflow-auto">{JSON.stringify(diffs, null, 2)}</pre>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const renderErrorDetails = (eventData: any) => {
+  const error = eventData.error || eventData.message
+  
+  return (
+    <div className="mb-4">
+      <h5 className="font-medium text-gray-800 mb-2">❌ Error</h5>
+      <div className="bg-red-50 p-3 rounded">
+        {error && (
+          <div className="text-sm">
+            <span className="font-medium text-red-800">Error Message:</span>
+            <div className="mt-1 p-2 bg-white rounded text-red-700">
+              {typeof error === 'string' ? error : JSON.stringify(error, null, 2)}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export default function Timeline() {
@@ -31,7 +280,16 @@ export default function Timeline() {
         throw new Error('Failed to fetch events')
       }
       const data = await response.json()
-      setEvents(data.events)
+      console.log('=== API Response Debug Info ===')
+      console.log('Full response:', data)
+      console.log('Debug info:', data.debug)
+      console.log('Number of events:', data.events?.length)
+      console.log('Sample event:', data.events?.[0])
+      console.log('=== End Debug Info ===')
+      
+      // Ensure events is always an array
+      const events = Array.isArray(data.events) ? data.events : []
+      setEvents(events)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -71,8 +329,22 @@ export default function Timeline() {
   }
 
   const getTimeRange = () => {
-    if (events.length === 0) return { start: new Date(), end: new Date() }
-    const timestamps = events.map(e => new Date(e.timestamp))
+    if (events.length === 0) {
+      const now = new Date()
+      const oneHourAgo = new Date(now.getTime() - (60 * 60 * 1000))
+      return { start: oneHourAgo, end: now }
+    }
+    
+    const timestamps = events
+      .map(e => e.timestamp ? new Date(e.timestamp) : null)
+      .filter(t => t && !isNaN(t.getTime()))
+    
+    if (timestamps.length === 0) {
+      const now = new Date()
+      const oneHourAgo = new Date(now.getTime() - (60 * 60 * 1000))
+      return { start: oneHourAgo, end: now }
+    }
+    
     return {
       start: new Date(Math.min(...timestamps.map(t => t.getTime()))),
       end: new Date(Math.max(...timestamps.map(t => t.getTime())))
@@ -99,11 +371,27 @@ export default function Timeline() {
   }
 
   const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString()
+    try {
+      const date = new Date(timestamp)
+      if (isNaN(date.getTime())) {
+        return '--:--:--'
+      }
+      return date.toLocaleTimeString()
+    } catch {
+      return '--:--:--'
+    }
   }
 
   const formatDate = (timestamp: string) => {
-    return new Date(timestamp).toLocaleDateString()
+    try {
+      const date = new Date(timestamp)
+      if (isNaN(date.getTime())) {
+        return '--/--/----'
+      }
+      return date.toLocaleDateString()
+    } catch {
+      return '--/--/----'
+    }
   }
 
   const generateTimeMarkers = () => {
@@ -273,6 +561,9 @@ export default function Timeline() {
             <div className="text-xs text-gray-300 uppercase tracking-wide mb-1">Total Tokens</div>
             <div className="text-2xl font-bold">{calculateTotalTokens(selectedEvent)}</div>
           </div>
+          
+          {/* Event-specific details */}
+          {renderEventSpecificDetails(selectedEvent)}
           
           <button 
             onClick={() => setSelectedEvent(null)}

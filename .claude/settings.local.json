@@ -11,7 +11,9 @@
       "Bash(ls:*)",
       "Bash(mv:*)",
       "Bash(corepack use:*)",
-      "Bash(corepack enable:*)"
+      "Bash(corepack enable:*)",
+      "Bash(curl:*)",
+      "Bash(npx tsx:*)"
     ],
     "deny": []
   }
