@@ -18,7 +18,11 @@ const DailyStatsSchema = z.object({
   activeProjects: z.number(),
   avgSessionDuration: z.number(),
   firstActivity: z.string().nullable(),
-  lastActivity: z.string().nullable()
+  lastActivity: z.string().nullable(),
+  acceptRate: z.number(),
+  codeAcceptRate: z.number(),
+  totalLinesSuggested: z.number(),
+  totalLinesAccepted: z.number()
 });
 
 const DailyStatsApiResponseSchema = z.object({
@@ -30,6 +34,10 @@ const DailyStatsApiResponseSchema = z.object({
     avgTokensPerDay: z.number(),
     totalSessions: z.number(),
     totalTokens: z.number(),
+    avgAcceptRate: z.number(),
+    avgCodeAcceptRate: z.number(),
+    totalLinesSuggested: z.number(),
+    totalLinesAccepted: z.number(),
     mostActiveDay: z.string().nullable(),
     queryDuration: z.number()
   }),
@@ -75,54 +83,182 @@ export async function GET(request: NextRequest) {
     const dbStatus = getDuckDBStatus();
     console.log(`[API] DuckDB status: ${JSON.stringify(dbStatus)}`);
 
-    // First, let's use the same query structure as the working events API
+    // Query with code-level accept rate calculation
     const query = `
-      SELECT 
-        DATE(CAST(timestamp AS TIMESTAMP)) as date,
-        COUNT(DISTINCT sessionId) as sessions,
-        COUNT(CASE WHEN type = 'user' THEN 1 END) as totalInteractions,
-        COUNT(DISTINCT cwd) as activeProjects,
-        -- Simple token extraction using the same approach as events API
-        COALESCE(SUM(
+      WITH code_tools AS (
+        SELECT 
+          DATE(CAST(timestamp AS TIMESTAMP)) as date,
+          sessionId,
+          uuid,
+          parentUuid,
+          type,
+          timestamp,
+          -- Extract Edit tool parameters
           CASE 
-            WHEN message IS NOT NULL AND json_extract_string(message, '$.usage.input_tokens') != ''
-            THEN TRY_CAST(json_extract_string(message, '$.usage.input_tokens') AS INTEGER)
-            ELSE 0
-          END
-        ), 0) as inputTokens,
-        COALESCE(SUM(
+            WHEN type = 'assistant' AND message IS NOT NULL 
+                 AND json_extract_string(message, '$.content[0].name') = 'Edit'
+            THEN json_extract_string(message, '$.content[0].input.old_string')
+            ELSE NULL
+          END as edit_old_string,
           CASE 
-            WHEN message IS NOT NULL AND json_extract_string(message, '$.usage.output_tokens') != ''
-            THEN TRY_CAST(json_extract_string(message, '$.usage.output_tokens') AS INTEGER)
-            ELSE 0
-          END
-        ), 0) as outputTokens,
-        COALESCE(SUM(
+            WHEN type = 'assistant' AND message IS NOT NULL 
+                 AND json_extract_string(message, '$.content[0].name') = 'Edit'
+            THEN json_extract_string(message, '$.content[0].input.new_string')
+            ELSE NULL
+          END as edit_new_string,
+          -- Extract Write tool parameters
           CASE 
-            WHEN message IS NOT NULL AND json_extract_string(message, '$.usage.cache_creation_input_tokens') != ''
-            THEN TRY_CAST(json_extract_string(message, '$.usage.cache_creation_input_tokens') AS INTEGER)
-            ELSE 0
-          END
-        ), 0) as cacheCreationTokens,
-        COALESCE(SUM(
+            WHEN type = 'assistant' AND message IS NOT NULL 
+                 AND json_extract_string(message, '$.content[0].name') = 'Write'
+            THEN json_extract_string(message, '$.content[0].input.content')
+            ELSE NULL
+          END as write_content,
+          -- Extract MultiEdit tool parameters (simplified - count first edit for now)
           CASE 
-            WHEN message IS NOT NULL AND json_extract_string(message, '$.usage.cache_read_input_tokens') != ''
-            THEN TRY_CAST(json_extract_string(message, '$.usage.cache_read_input_tokens') AS INTEGER)
+            WHEN type = 'assistant' AND message IS NOT NULL 
+                 AND json_extract_string(message, '$.content[0].name') = 'MultiEdit'
+            THEN json_extract_string(message, '$.content[0].input.edits[0].new_string')
+            ELSE NULL
+          END as multiedit_content,
+          -- General tool usage detection
+          CASE 
+            WHEN type = 'assistant' AND message IS NOT NULL AND 
+                 (json_extract_string(message, '$.stop_reason') = 'tool_use' OR 
+                  message.content LIKE '%tool_use%')
+            THEN 1 ELSE 0
+          END as is_tool_suggestion,
+          message
+        FROM read_json('${logsPattern}',
+          format = 'newline_delimited',
+          union_by_name = true,
+          filename = true
+        )
+        WHERE CAST(timestamp AS TIMESTAMP) >= (NOW() - INTERVAL ${maxDays} DAYS)
+          AND CAST(timestamp AS TIMESTAMP) IS NOT NULL
+      ),
+      code_metrics AS (
+        SELECT 
+          date,
+          sessionId,
+          uuid,
+          -- Calculate lines suggested by Claude
+          CASE 
+            WHEN edit_new_string IS NOT NULL 
+            THEN LENGTH(edit_new_string) - LENGTH(REPLACE(edit_new_string, CHR(10), '')) + 1
+            WHEN write_content IS NOT NULL 
+            THEN LENGTH(write_content) - LENGTH(REPLACE(write_content, CHR(10), '')) + 1
+            WHEN multiedit_content IS NOT NULL 
+            THEN LENGTH(multiedit_content) - LENGTH(REPLACE(multiedit_content, CHR(10), '')) + 1
             ELSE 0
-          END
-        ), 0) as cacheReadTokens,
-        0 as avgSessionDuration,  -- Simplified for now
-        MIN(timestamp)::VARCHAR as firstActivity,
-        MAX(timestamp)::VARCHAR as lastActivity
-      FROM read_json('${logsPattern}',
-        format = 'newline_delimited',
-        union_by_name = true,
-        filename = true
+          END as lines_suggested,
+          is_tool_suggestion
+        FROM code_tools
+        WHERE edit_new_string IS NOT NULL OR write_content IS NOT NULL OR multiedit_content IS NOT NULL
+      ),
+      interruptions AS (
+        SELECT 
+          DATE(CAST(timestamp AS TIMESTAMP)) as date,
+          parentUuid as interrupted_uuid
+        FROM read_json('${logsPattern}',
+          format = 'newline_delimited',
+          union_by_name = true,
+          filename = true
+        )
+        WHERE type = 'user' 
+          AND message IS NOT NULL 
+          AND message.content LIKE '%Request interrupted by user%'
+          AND CAST(timestamp AS TIMESTAMP) >= (NOW() - INTERVAL ${maxDays} DAYS)
+      ),
+      daily_stats AS (
+        SELECT 
+          DATE(CAST(timestamp AS TIMESTAMP)) as date,
+          COUNT(DISTINCT sessionId) as sessions,
+          COUNT(CASE WHEN type = 'user' THEN 1 END) as totalInteractions,
+          COUNT(DISTINCT cwd) as activeProjects,
+          -- Token calculations
+          COALESCE(SUM(
+            CASE 
+              WHEN message IS NOT NULL AND json_extract_string(message, '$.usage.input_tokens') != ''
+              THEN TRY_CAST(json_extract_string(message, '$.usage.input_tokens') AS INTEGER)
+              ELSE 0
+            END
+          ), 0) as inputTokens,
+          COALESCE(SUM(
+            CASE 
+              WHEN message IS NOT NULL AND json_extract_string(message, '$.usage.output_tokens') != ''
+              THEN TRY_CAST(json_extract_string(message, '$.usage.output_tokens') AS INTEGER)
+              ELSE 0
+            END
+          ), 0) as outputTokens,
+          COALESCE(SUM(
+            CASE 
+              WHEN message IS NOT NULL AND json_extract_string(message, '$.usage.cache_creation_input_tokens') != ''
+              THEN TRY_CAST(json_extract_string(message, '$.usage.cache_creation_input_tokens') AS INTEGER)
+              ELSE 0
+            END
+          ), 0) as cacheCreationTokens,
+          COALESCE(SUM(
+            CASE 
+              WHEN message IS NOT NULL AND json_extract_string(message, '$.usage.cache_read_input_tokens') != ''
+              THEN TRY_CAST(json_extract_string(message, '$.usage.cache_read_input_tokens') AS INTEGER)
+              ELSE 0
+            END
+          ), 0) as cacheReadTokens,
+          -- Tool-level accept rate calculation
+          COUNT(CASE WHEN type = 'assistant' AND message IS NOT NULL AND 
+                      (json_extract_string(message, '$.stop_reason') = 'tool_use' OR 
+                       message.content LIKE '%tool_use%') THEN 1 END) as toolSuggestions,
+          COUNT(CASE WHEN type = 'user' AND message IS NOT NULL AND 
+                      message.content LIKE '%Request interrupted by user%' THEN 1 END) as userInterruptions,
+          MIN(timestamp)::VARCHAR as firstActivity,
+          MAX(timestamp)::VARCHAR as lastActivity
+        FROM read_json('${logsPattern}',
+          format = 'newline_delimited',
+          union_by_name = true,
+          filename = true
+        )
+        WHERE CAST(timestamp AS TIMESTAMP) >= (NOW() - INTERVAL ${maxDays} DAYS)
+          AND CAST(timestamp AS TIMESTAMP) IS NOT NULL
+        GROUP BY DATE(CAST(timestamp AS TIMESTAMP))
+      ),
+      code_daily_stats AS (
+        SELECT 
+          cm.date,
+          SUM(cm.lines_suggested) as total_lines_suggested,
+          SUM(CASE WHEN i.interrupted_uuid IS NULL THEN cm.lines_suggested ELSE 0 END) as total_lines_accepted
+        FROM code_metrics cm
+        LEFT JOIN interruptions i ON cm.uuid = i.interrupted_uuid AND cm.date = i.date
+        GROUP BY cm.date
       )
-      WHERE CAST(timestamp AS TIMESTAMP) >= (NOW() - INTERVAL ${maxDays} DAYS)
-        AND CAST(timestamp AS TIMESTAMP) IS NOT NULL
-      GROUP BY DATE(CAST(timestamp AS TIMESTAMP))
-      ORDER BY date DESC
+      SELECT 
+        ds.date,
+        ds.sessions,
+        ds.totalInteractions,
+        ds.activeProjects,
+        ds.inputTokens,
+        ds.outputTokens,
+        ds.cacheCreationTokens,
+        ds.cacheReadTokens,
+        -- Tool-level accept rate: (tool suggestions - interruptions) / tool suggestions
+        CASE 
+          WHEN ds.toolSuggestions > 0 
+          THEN ROUND(((ds.toolSuggestions - ds.userInterruptions)::FLOAT / ds.toolSuggestions * 100), 2)
+          ELSE 100.0
+        END as acceptRate,
+        -- Code-level accept rate: (accepted lines) / suggested lines
+        CASE 
+          WHEN COALESCE(cds.total_lines_suggested, 0) > 0 
+          THEN ROUND((COALESCE(cds.total_lines_accepted, 0)::FLOAT / cds.total_lines_suggested * 100), 2)
+          ELSE 100.0
+        END as codeAcceptRate,
+        COALESCE(cds.total_lines_suggested, 0) as totalLinesSuggested,
+        COALESCE(cds.total_lines_accepted, 0) as totalLinesAccepted,
+        0 as avgSessionDuration,  -- Simplified for now
+        ds.firstActivity,
+        ds.lastActivity
+      FROM daily_stats ds
+      LEFT JOIN code_daily_stats cds ON ds.date = cds.date
+      ORDER BY ds.date DESC
     `;
 
     console.log(`[API] Executing daily stats query...`);
@@ -161,6 +297,26 @@ export async function GET(request: NextRequest) {
       return sum + interactions;
     }, 0);
     
+    // Calculate average accept rates
+    const avgAcceptRate = dailyStats.length > 0 
+      ? Math.round((dailyStats.reduce((sum: number, day: any) => sum + (parseFloat(day.acceptRate) || 0), 0) / dailyStats.length) * 100) / 100
+      : 0;
+    
+    const avgCodeAcceptRate = dailyStats.length > 0 
+      ? Math.round((dailyStats.reduce((sum: number, day: any) => sum + (parseFloat(day.codeAcceptRate) || 0), 0) / dailyStats.length) * 100) / 100
+      : 0;
+    
+    // Calculate total code metrics
+    const totalLinesSuggested = dailyStats.reduce((sum: number, day: any) => {
+      const lines = parseInt(day.totalLinesSuggested) || 0;
+      return sum + lines;
+    }, 0);
+    
+    const totalLinesAccepted = dailyStats.reduce((sum: number, day: any) => {
+      const lines = parseInt(day.totalLinesAccepted) || 0;
+      return sum + lines;
+    }, 0);
+    
     const avgSessionsPerDay = totalDays > 0 ? Math.round((totalSessions / totalDays) * 100) / 100 : 0;
     const avgInteractionsPerDay = totalDays > 0 ? Math.round((totalInteractions / totalDays) * 100) / 100 : 0;
     const avgTokensPerDay = totalDays > 0 ? Math.round(totalTokens / totalDays) : 0;
@@ -176,13 +332,17 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const startDate = new Date(now.getTime() - (maxDays * 24 * 60 * 60 * 1000));
 
-    // Add totalTokens field to each daily stat for the frontend
+    // Add totalTokens field and ensure proper type conversion for the frontend
     const processedDailyStats = dailyStats.map((day: any) => ({
       ...day,
       totalTokens: (parseInt(day.inputTokens) || 0) + 
                    (parseInt(day.outputTokens) || 0) + 
                    (parseInt(day.cacheCreationTokens) || 0) + 
-                   (parseInt(day.cacheReadTokens) || 0)
+                   (parseInt(day.cacheReadTokens) || 0),
+      acceptRate: parseFloat(day.acceptRate) || 0,
+      codeAcceptRate: parseFloat(day.codeAcceptRate) || 0,
+      totalLinesSuggested: parseInt(day.totalLinesSuggested) || 0,
+      totalLinesAccepted: parseInt(day.totalLinesAccepted) || 0
     }));
 
     const response: DailyStatsApiResponse = {
@@ -194,6 +354,10 @@ export async function GET(request: NextRequest) {
         avgTokensPerDay,
         totalSessions,
         totalTokens,
+        avgAcceptRate,
+        avgCodeAcceptRate,
+        totalLinesSuggested,
+        totalLinesAccepted,
         mostActiveDay,
         queryDuration
       },

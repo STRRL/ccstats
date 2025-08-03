@@ -5,7 +5,10 @@
       "Bash(tsx:*)",
       "Bash(pnpm add:*)",
       "Bash(pnpm test:*)",
-      "Bash(jq:*)"
+      "Bash(jq:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }

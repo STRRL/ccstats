@@ -156,7 +156,7 @@ export default function DailyStats() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4">
           <div className="text-sm text-gray-600">总天数</div>
           <div className="text-2xl font-bold text-blue-600">{data.summary.totalDays}</div>
@@ -168,6 +168,18 @@ export default function DailyStats() {
         <div className="bg-white rounded-lg shadow p-4">
           <div className="text-sm text-gray-600">平均用户消息</div>
           <div className="text-2xl font-bold text-indigo-600">{data.summary.avgInteractionsPerDay}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm text-gray-600">工具接受率</div>
+          <div className="text-2xl font-bold text-emerald-600">{data.summary.avgAcceptRate}%</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm text-gray-600">代码接受率</div>
+          <div className="text-2xl font-bold text-rose-600">{data.summary.avgCodeAcceptRate}%</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm text-gray-600">建议代码行数</div>
+          <div className="text-2xl font-bold text-cyan-600">{data.summary.totalLinesSuggested}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
           <div className="text-sm text-gray-600">平均每日 Tokens</div>
@@ -215,29 +227,121 @@ export default function DailyStats() {
         </div>
       </div>
 
-      {/* Token Usage Trend */}
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <h3 className="text-lg font-semibold mb-4">Token 使用量趋势</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" tickFormatter={formatDate} />
-            <YAxis tickFormatter={formatTokens} />
-            <Tooltip 
-              labelFormatter={(value) => `日期: ${formatDate(value as string)}`}
-              formatter={(value, name) => [
-                formatTokens(value as number), 
-                name === 'totalTokens' ? '总 Tokens' : 
-                name === 'inputTokens' ? '输入 Tokens' :
-                name === 'outputTokens' ? '输出 Tokens' : name
-              ]}
-            />
-            <Legend />
-            <Line type="monotone" dataKey="totalTokens" stroke="#8B5CF6" name="总 Tokens" strokeWidth={2} />
-            <Line type="monotone" dataKey="inputTokens" stroke="#06B6D4" name="输入 Tokens" strokeWidth={1} />
-            <Line type="monotone" dataKey="outputTokens" stroke="#10B981" name="输出 Tokens" strokeWidth={1} />
-          </LineChart>
-        </ResponsiveContainer>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Token Usage Trend */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Token 使用量趋势</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" tickFormatter={formatDate} />
+              <YAxis tickFormatter={formatTokens} />
+              <Tooltip 
+                labelFormatter={(value) => `日期: ${formatDate(value as string)}`}
+                formatter={(value, name) => [
+                  formatTokens(value as number), 
+                  name === 'totalTokens' ? '总 Tokens' : 
+                  name === 'inputTokens' ? '输入 Tokens' :
+                  name === 'outputTokens' ? '输出 Tokens' : name
+                ]}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="totalTokens" stroke="#8B5CF6" name="总 Tokens" strokeWidth={2} />
+              <Line type="monotone" dataKey="inputTokens" stroke="#06B6D4" name="输入 Tokens" strokeWidth={1} />
+              <Line type="monotone" dataKey="outputTokens" stroke="#10B981" name="输出 Tokens" strokeWidth={1} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Accept Rate Trend */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">接受率趋势</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" tickFormatter={formatDate} />
+              <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+              <Tooltip 
+                labelFormatter={(value) => `日期: ${formatDate(value as string)}`}
+                formatter={(value, name) => [
+                  `${value}%`, 
+                  name === 'acceptRate' ? '工具接受率' : 
+                  name === 'codeAcceptRate' ? '代码接受率' : name
+                ]}
+              />
+              <Legend />
+              <Line 
+                type="monotone" 
+                dataKey="acceptRate" 
+                stroke="#10B981" 
+                name="工具接受率" 
+                strokeWidth={2}
+                dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="codeAcceptRate" 
+                stroke="#EC4899" 
+                name="代码接受率" 
+                strokeWidth={2}
+                dot={{ fill: '#EC4899', strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, stroke: '#EC4899', strokeWidth: 2 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Code Metrics Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Code Lines Trend */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">代码行数趋势</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" tickFormatter={formatDate} />
+              <YAxis />
+              <Tooltip 
+                labelFormatter={(value) => `日期: ${formatDate(value as string)}`}
+                formatter={(value, name) => [
+                  value, 
+                  name === 'totalLinesSuggested' ? '建议行数' : 
+                  name === 'totalLinesAccepted' ? '接受行数' : name
+                ]}
+              />
+              <Legend />
+              <Bar dataKey="totalLinesSuggested" fill="#06B6D4" name="建议行数" />
+              <Bar dataKey="totalLinesAccepted" fill="#10B981" name="接受行数" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Code Accept Rate by Day */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">每日代码接受率</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" tickFormatter={formatDate} />
+              <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+              <Tooltip 
+                labelFormatter={(value) => `日期: ${formatDate(value as string)}`}
+                formatter={(value, name) => [`${value}%`, '代码接受率']}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="codeAcceptRate" 
+                stroke="#EC4899" 
+                name="代码接受率" 
+                strokeWidth={3}
+                dot={{ fill: '#EC4899', strokeWidth: 2, r: 5 }}
+                activeDot={{ r: 8, stroke: '#EC4899', strokeWidth: 2 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -292,9 +396,11 @@ export default function DailyStats() {
                 <th className="text-left p-3">日期</th>
                 <th className="text-left p-3">会话数</th>
                 <th className="text-left p-3">用户消息数</th>
+                <th className="text-left p-3">工具接受率</th>
+                <th className="text-left p-3">代码接受率</th>
+                <th className="text-left p-3">代码行数</th>
                 <th className="text-left p-3">总 Tokens</th>
                 <th className="text-left p-3">活跃项目</th>
-                <th className="text-left p-3">平均会话时长</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -303,9 +409,33 @@ export default function DailyStats() {
                   <td className="p-3 font-medium">{formatDate(day.date)}</td>
                   <td className="p-3">{day.sessions}</td>
                   <td className="p-3">{day.totalInteractions}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      day.acceptRate >= 90 ? 'bg-green-100 text-green-800' :
+                      day.acceptRate >= 70 ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {day.acceptRate}%
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      day.codeAcceptRate >= 90 ? 'bg-rose-100 text-rose-800' :
+                      day.codeAcceptRate >= 70 ? 'bg-orange-100 text-orange-800' :
+                      day.codeAcceptRate >= 50 ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {day.codeAcceptRate}%
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <div className="text-xs">
+                      <div className="text-cyan-600">{day.totalLinesSuggested} 建议</div>
+                      <div className="text-green-600">{day.totalLinesAccepted} 接受</div>
+                    </div>
+                  </td>
                   <td className="p-3">{formatTokens(day.totalTokens)}</td>
                   <td className="p-3">{day.activeProjects}</td>
-                  <td className="p-3">{Math.round(day.avgSessionDuration)} 分钟</td>
                 </tr>
               ))}
             </tbody>
